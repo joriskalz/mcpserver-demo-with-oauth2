@@ -59,7 +59,7 @@ npm run dev
 
 # 4) Start a Dev Tunnel (separate terminal)
 devtunnel user login
-devtunnel host -p 3000
+devtunnel host -p 3000 --allow-anonymous
 # Note the public HTTPS URL, e.g., https://<id>-3000.<region>.devtunnels.ms/mcp
 ```
 
@@ -89,9 +89,9 @@ We separate API (resource server) and client (Copilot Studio).
 
 1. **Register app** → **Expose an API**:
 
-   * Set **Application ID URI**, e.g., `api://<your-domain-or-guid>/mcp-sap`.
+   * Set **Application ID URI**, e.g., `api://<guid>`.
    * Create a **scope**, e.g., `Mcp.Access` (full scope becomes `api://…/Mcp.Access`).
-2. (Optional) Create **app roles** (e.g., `McpServer.Invoke`) for client-credentials tests.
+
 3. **Manifest**: If needed, set `requestedAccessTokenVersion: 2`.
    *(In some setups this is required so `scp`/`roles` are issued as expected.)*
 
@@ -115,7 +115,7 @@ We separate API (resource server) and client (Copilot Studio).
 
 ```bash
 devtunnel user login
-devtunnel host -p 3000
+devtunnel host -p 3000 --allow-anonymous
 # The output contains a public HTTPS URL; append "/mcp" for the Server URL in the wizard
 ```
 
