@@ -1,113 +1,128 @@
-
 # MCP Demo Server (OAuth 2.0 via Microsoft Entra ID)
 
-A minimal **Model Context Protocol (MCP)** server (TypeScript SDK) that simulates SAP-like actions (order status, service tickets) for illustrative purposes — it is not intended to simulate real SAP calls or present this as an SAP use case. It is secured with **OAuth 2.0 (Authorization Code Flow)** via **Microsoft Entra ID**. For local development, the server is exposed through **Microsoft Dev Tunnels** and can be attached to a **Copilot Studio** agent via the **MCP wizard**.
+> Important: This project simulates SAP-like MCP tools for demos; it is **not** an SAP integration.
+
+The service is built with the Model Context Protocol (MCP) TypeScript SDK and secures its HTTP transport with Microsoft Entra ID. It is frequently used together with Microsoft Dev Tunnels and Copilot Studio agents.
 
 ---
 
 ## Table of Contents
 
-1. [Features](#features)
-2. [Prerequisites](#prerequisites)
-3. [Quick Start](#quick-start)
+1. [5-Minute Quick Start](#5-minute-quick-start)
+2. [Features](#features)
+3. [Prerequisites](#prerequisites)
 4. [Environment Variables](#environment-variables)
-5. [Microsoft Entra ID: Two App Registrations](#microsoft-entra-id-two-app-registrations)
-6. [Start a Dev Tunnel](#start-a-dev-tunnel)
-7. [Copilot Studio: Add the MCP Server (Wizard)](#copilot-studio-add-the-mcp-server-wizard)
-8. [Testing (Inspector / curl)](#testing-inspector--curl)
-9. [Troubleshooting](#troubleshooting)
-10. [Production Notes](#production-notes)
-11. [Appendix: Example Values](#appendix-example-values)
+5. [Microsoft Entra ID Setup](#microsoft-entra-id-setup)
+6. [Delegated vs Client Credentials](#delegated-vs-client-credentials)
+7. [Start a Dev Tunnel](#start-a-dev-tunnel)
+8. [Copilot Studio Setup](#copilot-studio-setup)
+9. [Testing](#testing)
+10. [Security Checklist](#security-checklist)
+11. [Common Errors](#common-errors)
+12. [Production Notes](#production-notes)
+13. [Appendix: Example Values](#appendix-example-values)
+
+---
+
+## 5-Minute Quick Start
+
+1. **Use Node 20 LTS**  
+   `nvm use 20` (or ensure `node --version` reports 20.x).
+2. **Install dependencies**  
+   `npm install`
+3. **Create your environment file**  
+   `cp .env.sample .env` and update:
+   - `TENANT_ID`: your Microsoft Entra tenant GUID
+   - `AUDIENCE`: the Application (client) ID or Application ID URI of the API app
+   - `PORT`: optional (defaults to 3000)
+4. **Start the dev server**  
+   `npm run dev` → http://localhost:3000/mcp
+5. **Expose the port (optional for Copilot Studio)**  
+   `devtunnel host -p 3000 --allow-anonymous`
+6. **Type safety check (optional, fast)**  
+   `npm run typecheck`
+7. **Production-style run**  
+   `npm start` automatically builds to `dist/` and launches the compiled server.
 
 ---
 
 ## Features
 
-The server registers simulated MCP tools:
-
-* `getOrderStatus(orderId)` – returns `OPEN | IN_DELIVERY | DELIVERED` plus ETA
-* `getServiceTicketStatus(ticketId)` – returns `NEW | IN_PROGRESS | RESOLVED`
-* `createServiceTicket(orderId, reason)` – creates a dummy ticket
-
-> Implemented with `@modelcontextprotocol/sdk` and a **Streamable HTTP** endpoint at `/mcp`.
+- Streamable HTTP MCP endpoint (`/mcp`) backed by `@modelcontextprotocol/sdk`.
+- Simulated SAP-style tools with English descriptions and dynamic ETAs.
+- OAuth 2.0 bearer validation with Microsoft Entra ID (v2 issuer) plus app roles/scopes.
+- Security middleware: Helmet for headers, rate limiting, configurable CORS, UUID session IDs.
+- Structured logging: Morgan for access logs, targeted auth diagnostics, process-level safeguards.
 
 ---
 
 ## Prerequisites
 
-* **Node.js 20 LTS** (recommended; e.g., via `nvm alias default 20`)
-* **npm** or **pnpm**
-* A **Microsoft Entra** tenant (admin rights to create app registrations)
-* A **Copilot Studio** environment with an agent
-* **Microsoft Dev Tunnels** CLI (to expose your local port)
-
----
-
-## Quick Start
-
-```bash
-# 1) Install dependencies
-npm install
-
-# 2) Create .env (see below)
-cp .env.sample .env
-# ... fill TENANT_ID / AUDIENCE / PORT
-
-# 3) Start the dev server
-npm run dev
-# Listens at http://localhost:3000/mcp
-
-# 4) Start a Dev Tunnel (separate terminal)
-devtunnel user login
-devtunnel host -p 3000 --allow-anonymous
-# Note the public HTTPS URL, e.g., https://<id>-3000.<region>.devtunnels.ms/mcp
-```
+- **Node.js 20 LTS** (required)
+- **npm** (ships with Node) or **pnpm**
+- Microsoft **Dev Tunnels** CLI to expose the local port
+- Microsoft **Entra ID** tenant with rights to create app registrations
+- **Copilot Studio** environment with an agent
 
 ---
 
 ## Environment Variables
 
-Values are loaded via `dotenv` (see `src/server.ts`). The **Audience** must match the “Application ID URI” of your API app (or its app ID).
+| Variable                | Required | Description                                                                                         | Example                                             |
+| ----------------------- | -------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `TENANT_ID`             | Yes      | Tenant GUID (preferred) or domain.                                                                  | `ffffffff-ffff-ffff-ffff-ffffffffffff`              |
+| `AUDIENCE`              | Yes      | Expected JWT `aud` claim: API App ID URI or GUID.                                                   | `api://ffffffff-ffff-ffff-ffff-ffffffffffff`        |
+| `PORT`                  | No       | HTTP port for the Express server.                                                                   | `4044`                                              |
+| `ALLOWED_SCOPES`        | No       | Space or comma separated list of delegated scopes that are accepted.                                | `Mcp.Access access_as_mcp`                          |
+| `ALLOWED_ROLES`         | No       | Comma separated list of app roles (client credentials) that are accepted.                           | `McpServer.Invoke,McpServer.Read`                   |
+| `CORS_ORIGIN`           | No       | Comma separated allowlist. Use `*` for any origin. Default: disabled in production, localhost in dev. | `https://contoso.com,https://portal.contoso.com`    |
+| `RATE_LIMIT_WINDOW_MS`  | No       | Override the rate-limit window length (milliseconds). Default: 900000 (15 minutes).                 | `60000`                                             |
+| `RATE_LIMIT_MAX`        | No       | Override the max number of requests allowed per window. Default: 100.                               | `300`                                               |
 
-| Variable         | Required | Description                                                    | Example                                              |
-| ---------------- | -------- | -------------------------------------------------------------- | ---------------------------------------------------- |
-| `TENANT_ID`      | Yes      | Tenant GUID or name (GUID recommended).                        | `ffffffff-ffff-ffff-ffff-ffffffffffff`               |
-| `AUDIENCE`       | Yes      | Expected token `aud`: the app ID (GUID).   | `ffffffff-ffff-ffff-ffff-ffffffffffff` |
-| `PORT`           | No       | HTTP port (default `3000`).                                    | `4044`                                               |
-| `ALLOWED_SCOPES` | No       | Allowed scopes (blank → defaults: `Mcp.Access access_as_mcp`). | `Mcp.Access`                                         |
-| 
-
-> **Note:** code accepts a suitable `scp` (scope) e.g for delegated tokens via Copilot Studio, `Mcp.Access` is enough.
+> Tip: leave `CORS_ORIGIN` blank in production if the service is never called directly by browsers.
 
 ---
 
-## Microsoft Entra ID: Two App Registrations
+## Microsoft Entra ID Setup
 
-We separate API (resource server) and client (Copilot Studio).
+Create two app registrations: one API (resource) and one client (Copilot Studio).
 
-### A) API App “MCP SAP API” (resource)
+### 1. API App “MCP SAP API”
 
-1. **Register app** → **Expose an API**:
+1. Register a new app (single tenant is fine).  
+2. **Expose an API**:
+   - Set the Application ID URI (e.g. `api://<app-id-guid>`).
+   - Add a **scope** named `Mcp.Access` with admin consent (full scope becomes `api://.../Mcp.Access`).
+3. Optional: add **app roles** such as `McpServer.Invoke` for client credential flows.  
+4. Manifest: ensure `requestedAccessTokenVersion` is set to `2`.
 
-   * Set **Application ID URI**, e.g., `api://<guid>`.
-   * Create a **scope**, e.g., `Mcp.Access` (full scope becomes `api://…/Mcp.Access`).
+### 2. Client App “MCP SAP Client (Copilot Studio)”
 
-3. **Manifest**: If needed, set `requestedAccessTokenVersion: 2`.
-   *(In some setups this is required so `scp`/`roles` are issued as expected.)*
+1. Register another app.
+2. **Authentication** → **Add a platform** → **Web**.
+   - Later copy the exact Redirect URI from the Copilot Studio wizard and paste it here (must match exactly).
+3. **Certificates & secrets** → create a client secret and note it.
+4. **API permissions** → **My APIs** → select your API app.
+   - Delegated permission: `Mcp.Access`
+   - (Optional) Application permissions: app roles you created earlier (`McpServer.Invoke` etc.)
+5. Grant admin consent once permissions are configured.
 
-### B) Client App “MCP SAP Client (Copilot Studio)”
+Endpoints (v2.0):
 
-1. **Register app** → **Authentication** → **Add a platform** → **Web**.
+- Authorization URL: `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize`
+- Token URL: `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
+- Refresh URL: same as token; include `offline_access` only for delegated flows.
 
-   * You’ll add the **Redirect URI** from the **Copilot Studio MCP wizard** later (exact match). **Do not** use SPA/Public Client for this scenario.
-2. **Certificates & secrets** → create a **client secret**.
-3. **API permissions** → **My APIs** → your **API app** → **Delegated permissions** → check **`Mcp.Access`** → **Grant admin consent**.
+---
 
-**Endpoints (v2.0):**
+## Delegated vs Client Credentials
 
-* Authorization URL: `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize`
-* Token URL: `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
-* **Refresh URL** = **Token URL** (refresh token grant uses the same endpoint; include `offline_access` in scopes if you want refresh tokens).
+| Scenario              | When to Use                                                         | API Permissions Needed              | Scope string to send to token endpoint | Scope string for Copilot Studio |
+| --------------------- | -------------------------------------------------------------------- | ----------------------------------- | -------------------------------------- | ------------------------------- |
+| Delegated (user flow) | Copilot Studio agent authenticates on behalf of a human.            | Delegated: `Mcp.Access`             | `api://<ApplicationIDURI>/Mcp.Access offline_access` | Same value as token request     |
+| Client credentials    | Service-to-service automation; no user context.                     | Application: `McpServer.Invoke` (or similar app role) | `api://<ApplicationIDURI>/.default`   | Not used (Copilot Studio uses delegated) |
+
+> Remember: Copilot Studio currently uses delegated auth. Client credentials are only needed for custom automation or testing tools.
 
 ---
 
@@ -116,77 +131,57 @@ We separate API (resource server) and client (Copilot Studio).
 ```bash
 devtunnel user login
 devtunnel host -p 3000 --allow-anonymous
-# The output contains a public HTTPS URL; append "/mcp" for the Server URL in the wizard
+# Copy the public https URL and append /mcp for Copilot Studio.
 ```
 
 ---
 
-## Copilot Studio: Add the MCP Server (Wizard)
+## Copilot Studio Setup
 
-> Important: **Add the MCP server from within an agent**: **Agent → Tools → Add tool → Model Context Protocol**.
-> The global “Tools” page also lists tools, but the “Add MCP server” entry there primarily links to docs—use the agent’s tools tab instead.
+> Add the MCP server from your agent: **Agent → Tools → Add tool → Model Context Protocol**.
 
 1. **Server details**
-
-   * **Name**: e.g., `SAP (simulated)`
-   * **Server URL**: `https://<devtunnel-host>/mcp`
-   * Transport: **Streamable HTTP** (default/implicit).
+   - Name: e.g. `SAP (simulated)`
+   - Server URL: `https://<devtunnel-host>/mcp`
+   - Transport: Streamable HTTP (default)
 2. **Authentication: OAuth 2.0 (Manual)**
-
-   * **Client ID**: from your client app
-   * **Client Secret**: from your client app
-   * **Authorization URL**: `https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/authorize`
-   * **Token URL** **and** **Refresh URL**: `https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token`
-   * **Scopes**: `api://<ApplicationIDURI>/Mcp.Access offline_access`
-3. The wizard shows a **Redirect URL** → **copy it** → in your **client app** add it under **Authentication → Web Redirect URIs** (exact match) → **Save**.
-4. **Create** / **Save**, then **Create connection** → sign in/consent → done.
-
-**Example (do not commit these values):**
-
-```
-Server URL: https://abcdefg-3000.euw.devtunnels.ms/mcp
-Authorization URL: https://login.microsoftonline.com/ffffffff-ffff-ffff-ffff-ffffffffffff/oauth2/v2.0/authorize
-Token/Refresh URL: https://login.microsoftonline.com/ffffffff-ffff-ffff-ffff-ffffffffffff/oauth2/v2.0/token
-Scopes: api://ffffffff-ffff-ffff-ffff-ffffffffffff/Mcp.Access offline_access
-Redirect URL (from wizard): https://global.consent.azure-apim.net/redirect/...
-```
+   - Client ID / Secret: from the client app
+   - Authorization URL: `https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/authorize`
+   - Token + Refresh URL: `https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token`
+   - Scopes: `api://<ApplicationIDURI>/Mcp.Access offline_access`
+3. When the wizard shows a Redirect URL, copy it to **Azure Portal → Client app → Authentication → Web Redirect URIs** and save.
+4. Create the connection, sign in, and consent.
 
 ---
 
-## Testing (Inspector / curl)
+## Testing
 
-### 1) Health check
+### Health check
 
 ```bash
 curl http://localhost:3000/health
 # -> { "ok": true, "mcp": "/mcp" }
 ```
 
-### 2) MCP Inspector (CLI)
-
-> Works reliably with Node 20. If the latest Inspector version has an ESM packaging hiccup, pin a known-good version (e.g., `@0.16.x`).
+### MCP Inspector (CLI)
 
 ```bash
-# List tools (example invocation style)
 npx @modelcontextprotocol/inspector@0.16.2 --cli \
   curl http://localhost:3000/mcp --method tools/list
 ```
 
-### 3) Raw POST (expect 401 without a token)
+### Direct MCP call (no token)
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+# -> 401 Missing bearer token
 ```
 
-### 4) With an access token
-
-Delegated tokens come via Copilot Studio’s connection flow.
-If you want **client credentials** locally, add an **app role** (e.g., `McpServer.Invoke`) in the **API app** and grant **application permissions** to the **client app** (admin consent). Then:
+### Client credentials token (optional)
 
 ```bash
-# Get token (client credentials) – produces a roles claim
 curl -X POST \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "client_id=<CLIENT_ID>" \
@@ -196,52 +191,50 @@ curl -X POST \
   "https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token"
 ```
 
-```bash
-# MCP call with Bearer
-curl -X POST http://localhost:3000/mcp \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"getOrderStatus","arguments":{"orderId":"4711"}}}'
-```
+---
+
+## Security Checklist
+
+- `npm run typecheck` and `npm run build` before deploying; the build output lives in `dist/`.
+- Keep `NODE_ENV=production` in production runs to enable leaner logging.
+- Configure `CORS_ORIGIN` explicitly; leave blank to disable browser access.
+- Tune `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` if you expect higher throughput.
+- Rotate your client secrets regularly; use Azure Key Vault or managed identities when possible.
+- Monitor logs for repeated 401/403 responses; every MCP request is tagged with a unique session ID.
 
 ---
 
-## Troubleshooting
+## Common Errors
 
-**`AADSTS650053` – scope doesn’t exist / wrong resource (`00000003-...`)**
-
-* You entered `Mcp.Access` **without** a resource prefix, so Entra treated it as **Microsoft Graph** (app id `00000003-...`).
-* **Fix:** Use the **fully qualified** scope in Copilot Studio:
-  `api://<ApplicationIDURI>/Mcp.Access` (plus optional `offline_access`).
-
-**`AADSTS50011` – Redirect URI mismatch**
-
-* Add the wizard’s **exact** Redirect URL as a **Web redirect** in the **client app** (HTTPS, case-sensitive).
-
-**No refresh token**
-
-* Add `offline_access` to scopes. Refresh uses the same **/token** endpoint (Refresh URL = Token URL).
-
-**Inspector CLI fails to launch (ESM / `ERR_MODULE_NOT_FOUND`)**
-
-* Use Node 20 and pin a stable Inspector version (e.g., `@0.16.x`).
-
-**Dev Tunnel isn’t public**
-
-* Run `devtunnel user login` and then `devtunnel host -p <port>` again.
-
-**Server rejects token (`aud` / `iss` / `scp`)**
-
-* Check tenant; ensure `aud` matches your API app’s Application ID URI; confirm `scp` includes `Mcp.Access` (delegated) **or** `roles` contains a permitted app role (client credentials).
+- **401 Missing/invalid token**  
+  Ensure the Copilot Studio connection references the correct tenant and audience. Check the consented scopes.
+- **403 Insufficient permissions**  
+  The token must contain at least one allowed scope (`scp`) or app role (`roles`). Compare the response body with your Azure configuration.
+- **Redirect URI mismatch**  
+  The wizard-generated URI must be pasted into Azure → Client app → Authentication before you create the connection.
+- **CORS blocked by browser**  
+  Set `CORS_ORIGIN` to include the exact browser origin (protocol + host + port) or disable browser access.
+- **429 Too many requests**  
+  Increase `RATE_LIMIT_MAX` or widen `RATE_LIMIT_WINDOW_MS` for trusted traffic sources.
 
 ---
 
 ## Production Notes
 
-* **Dev Tunnels are for development only**; in production use a proper domain/TLS, reverse proxy, logging/auditing, and rate limits.
-* Keep CORS tight; never commit secrets; plan secret rotation.
-* Consider PKCE/Conditional Access as needed via Entra policies.
-* Add monitoring/alerting (e.g., App Insights/APIM) and structured logs.
+- `npm start` triggers a fresh `npm run build` (via `prestart`) to ensure `dist/` is in sync.
+- Serve behind HTTPS and ensure secrets are stored securely (Key Vault, environment variables, etc.).
+- Consider running behind a reverse proxy that terminates TLS and adds additional rate limiting / monitoring.
+- Watch for `unhandledRejection` or `uncaughtException` logs; the process exits after logging to avoid “zombie” states.
 
 ---
 
+## Appendix: Example Values
+
+```
+Server URL: https://abcdefg-3000.euw.devtunnels.ms/mcp
+Authorization URL: https://login.microsoftonline.com/ffffffff-ffff-ffff-ffff-ffffffffffff/oauth2/v2.0/authorize
+Token/Refresh URL: https://login.microsoftonline.com/ffffffff-ffff-ffff-ffff-ffffffffffff/oauth2/v2.0/token
+Scopes (delegated): api://ffffffff-ffff-ffff-ffff-ffffffffffff/Mcp.Access offline_access
+Client credentials scope: api://ffffffff-ffff-ffff-ffff-ffffffffffff/.default
+Redirect URL (wizard): https://global.consent.azure-apim.net/redirect/...
+```
