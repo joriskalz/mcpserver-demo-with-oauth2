@@ -9,41 +9,33 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 
 /* ---------- ENV ---------- */
 const EnvSchema = z.object({
-  TENANT_ID: z.string().min(1), // GUID empfohlen
-  // Erlaube GUID, api://..., oder URL
-  AUDIENCE: z.union([
-    z.string().uuid(),
-    z.string().startsWith("api://"),
-    z.string().url()
-  ]),
-  AUDIENCE_ALT: z
-    .union([z.string().uuid(), z.string().startsWith("api://"), z.string().url()])
-    .optional(),
+  TENANT_ID: z.string().min(1),
+  AUDIENCE: z.union([z.string().uuid(), z.string().startsWith("api://"), z.string().url()]),
+  AUDIENCE_ALT: z.union([z.string().uuid(), z.string().startsWith("api://"), z.string().url()]).optional(),
   PORT: z.string().optional(),
+  // NEW: allow configuring scopes/roles via env; defaults cover Copilot Studio
+  ALLOWED_SCOPES: z.string().optional(), // e.g. "Mcp.Access access_as_mcp"
+  ALLOWED_ROLES: z.string().optional(),  // e.g. "McpServer.Invoke,McpServer.Read"
 });
 const env = EnvSchema.parse(process.env);
 
 /* ---------- OAuth/JWT Settings (Entra) ---------- */
 const TENANT_ID = env.TENANT_ID;
 const ISSUERS = [
-  // v2 (bevorzugt)
   `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,
-  // optional v1 fallback: auskommentieren, wenn du strikt v2 willst
+  // uncomment if you really need v1
   // `https://sts.windows.net/${TENANT_ID}/`,
 ];
 
-// JWKS: v2 keys
+// JWKS clients
 const JWKS_URI_V2 = `https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys`;
 const jwksV2 = jwksClient({ jwksUri: JWKS_URI_V2 });
-
-// Falls du auch v1 zulassen willst, aktiviere die 2 Zeilen:
 const JWKS_URI_V1 = `https://login.microsoftonline.com/${TENANT_ID}/discovery/keys`;
 const jwksV1 = jwksClient({ jwksUri: JWKS_URI_V1 });
 
 function getKey(header: any, cb: any) {
   jwksV2.getSigningKey(header.kid, (err, key: any) => {
     if (!err && key) return cb(null, key.getPublicKey());
-    // Fallback auf v1-JWKS (nur wenn oben aktiviert)
     jwksV1.getSigningKey(header.kid, (err2, key2: any) => {
       if (err2) return cb(err2);
       cb(null, key2.getPublicKey());
@@ -51,26 +43,35 @@ function getKey(header: any, cb: any) {
   });
 }
 
-// Audience: GUID und api://… akzeptieren
-const audiences = Array.from(
-  new Set(
-    [env.AUDIENCE, env.AUDIENCE_ALT]
-      .filter(Boolean)
-      .map(String)
-  )
+// Accept GUID and api://… audiences
+const audiences = Array.from(new Set([env.AUDIENCE, env.AUDIENCE_ALT].filter(Boolean).map(String)));
+
+/* ---------- Authorization (roles/scopes) ---------- */
+// Defaults cover Copilot Studio’s OAuth connection (scope "Mcp.Access")
+// and your previous local fallback ("access_as_mcp"). Case-insensitive.
+const defaultScopes = ["Mcp.Access", "access_as_mcp"];
+const defaultRoles = ["McpServer.Invoke", "McpServer.Read", "McpServer.Write"];
+
+const allowedScopes = new Set(
+  (env.ALLOWED_SCOPES ? env.ALLOWED_SCOPES.split(/[,\s]+/) : defaultScopes)
+    .filter(Boolean)
+    .map(s => s.toLowerCase())
 );
 
-/* ---------- Rollen/Scopes ---------- */
+const allowedRoles = new Set(
+  (env.ALLOWED_ROLES ? env.ALLOWED_ROLES.split(/[,\s]+/) : defaultRoles)
+    .filter(Boolean)
+    .map(r => r.toLowerCase())
+);
+
 function authorize(decoded: any) {
   const roles: string[] = Array.isArray(decoded?.roles) ? decoded.roles : [];
-  const scopes: string[] = typeof decoded?.scp === "string" ? decoded.scp.split(" ") : [];
+  // scp is space-separated when present on delegated (user) tokens
+  const scopes: string[] = typeof decoded?.scp === "string" ? decoded.scp.split(/\s+/) : [];
 
-  // Deine finalen Werte:
-  const allowedRoles = new Set(["McpServer.Invoke", "McpServer.Read", "McpServer.Write"]);
-  const allowedScopes = new Set(["access_as_mcp"]); // falls du Delegated-Flow nutzt
+  const roleOk = roles.some(r => allowedRoles.has(String(r).toLowerCase()));
+  const scopeOk = scopes.some(s => allowedScopes.has(String(s).toLowerCase()));
 
-  const roleOk = roles.some(r => allowedRoles.has(r));
-  const scopeOk = scopes.some(s => allowedScopes.has(s));
   return roleOk || scopeOk;
 }
 
@@ -84,8 +85,8 @@ async function verifyBearer(req: express.Request, res: express.Response, next: e
     getKey,
     {
       algorithms: ["RS256"],
-      issuer: ISSUERS,          // akzeptiere v2 (und optional v1)
-      audience: audiences,      // ← GUID und/oder api://… erlaubt
+      issuer: ISSUERS,
+      audience: audiences,
     } as any,
     (err, decoded: any) => {
       if (err) {
@@ -97,7 +98,17 @@ async function verifyBearer(req: express.Request, res: express.Response, next: e
       }
       if (!authorize(decoded)) {
         console.warn("[auth] authorization failed. claims:", { roles: decoded?.roles, scp: decoded?.scp });
-        return res.status(403).json({ error: "Insufficient permissions", detail: { roles: decoded?.roles, scp: decoded?.scp } });
+        return res.status(403).json({
+          error: "Insufficient permissions",
+          detail: {
+            roles: decoded?.roles ?? null,
+            scp: decoded?.scp ?? null,
+            expected: {
+              anyRoleIn: Array.from(allowedRoles),
+              anyScopeIn: Array.from(allowedScopes),
+            },
+          },
+        });
       }
       (req as any).user = decoded;
       next();

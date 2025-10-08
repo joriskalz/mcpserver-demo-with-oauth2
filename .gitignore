@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .DS_Store
+personal_data.txt
 .env
 .env.*
 !.env.sample
