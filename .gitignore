@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.sample
+*.log
+
+# TypeScript build artifacts
+*.tsbuildinfo
+
+# Local tooling
+.vscode/
+.idea/
