@@ -241,14 +241,14 @@ curl -X POST \
 
 ```mermaid
 graph TD
-  subgraph UserSpace["User & Copilot Studio"]
+  subgraph UserSpace["User and Copilot Studio"]
     U[Human User]
     A[Copilot Studio Agent]
     MCPClient[MCP Client]
   end
 
-  subgraph Net["Network / Tunnels"]
-    DT[Microsoft Dev Tunnels (*.devtunnels.ms)]
+  subgraph Net["Network and Tunnels"]
+    DT["Microsoft Dev Tunnels - devtunnels.ms"]
   end
 
   subgraph Server["MCP Demo Server"]
@@ -264,10 +264,15 @@ graph TD
     JWKS[JWKS Keys]
   end
 
-  U --> A --> MCPClient
+  U --> A
+  A --> MCPClient
   MCPClient --> Authz
   Authz --> Token
-  MCPClient -->|Bearer JWT| DT --> E --> M --> SM --> Tools
+  MCPClient -->|Bearer JWT| DT
+  DT --> E
+  E --> M
+  M --> SM
+  SM --> Tools
   E --> JWKS
 ```
 
@@ -345,21 +350,28 @@ flowchart TD
 
 ```mermaid
 graph LR
+  Copilot[Copilot Studio]
+
   subgraph Dev
     DevUser[Developer]
-    DevUser -->|localhost:3000| DevSrv[Express/MCP Server]
-    DevSrv -.->|devtunnel host -p 3000| DevTunnel[Dev Tunnels]
-    DevTunnel --> Copilot[Copilot Studio]
+    DevSrv["Express MCP Server - Dev"]
+    DevTunnel["Dev Tunnels"]
+    DevUser --> DevSrv
+    DevSrv -. devtunnel .-> DevTunnel
+    DevTunnel --> Copilot
   end
 
   subgraph Prod
-    LB[Reverse Proxy / Ingress (TLS)]
-    LB --> ProdSrv[Express/MCP Server]
-    ProdSrv --> KeyVault[(Secrets)]
-    Copilot --> LB
+    LB["Reverse Proxy and Ingress - TLS"]
+    ProdSrv["Express MCP Server - Prod"]
+    KeyVault[(Secrets)]
+    Logs[(Observability)]
   end
 
-  ProdSrv --> Logs[(Observability)]
+  Copilot --> LB
+  LB --> ProdSrv
+  ProdSrv --> KeyVault
+  ProdSrv --> Logs
 ```
 
 **Notes**
