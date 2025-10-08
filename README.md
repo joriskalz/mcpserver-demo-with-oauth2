@@ -241,33 +241,34 @@ curl -X POST \
 
 ```mermaid
 graph TD
-  subgraph UserSpace[User & Copilot Studio]
+  subgraph UserSpace["User & Copilot Studio"]
     U[Human User]
     A[Copilot Studio Agent]
-    MCPClient[Built-in MCP Client]
+    MCPClient[MCP Client]
   end
 
-  subgraph Net[Network / Tunnels]
-    DT[Microsoft Dev Tunnels<br/>https://*.devtunnels.ms]
+  subgraph Net["Network / Tunnels"]
+    DT[Microsoft Dev Tunnels (*.devtunnels.ms)]
   end
 
-  subgraph Server[MCP Demo Server]
-    E[Express App<br/>(helmet, cors, rate-limit, morgan)]
+  subgraph Server["MCP Demo Server"]
+    E[Express App]
     M[/POST /mcp/]
-    SM[Session Manager<br/>(StreamableHTTPServerTransport)]
-    Tools[Simulated Tools<br/>(orders, tickets...)]
+    SM[Session Manager]
+    Tools[Simulated Tools]
   end
 
-  subgraph Auth[Microsoft Entra ID (v2)]
+  subgraph Auth["Microsoft Entra ID v2"]
     Authz[Authorize Endpoint]
     Token[Token Endpoint]
-    JWKS[OpenID JWKs]
+    JWKS[JWKS Keys]
   end
 
-  U --> A --> MCPClient -->|OAuth2 (delegated)| Authz
-  Authz -->|code -> token| Token
+  U --> A --> MCPClient
+  MCPClient --> Authz
+  Authz --> Token
   MCPClient -->|Bearer JWT| DT --> E --> M --> SM --> Tools
-  E -->|JWKS fetch| JWKS
+  E --> JWKS
 ```
 
 **Notes**
@@ -315,23 +316,27 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-  A[Incoming POST /mcp] --> B{Rate limit ok?}
-  B -- no --> R[429 Too Many Requests]
-  B -- yes --> C{CORS enabled?}
-  C -- yes --> C1[Validate Origin] --> C2{Allowed?}
-  C2 -- no --> C3[403/Blocked by CORS]
-  C2 -- yes --> D[Parse JSON (1 MB limit)]
-  C -- no --> D
+  A[POST /mcp] --> B{Rate limit ok?}
+  B -- No --> R[429 Too Many Requests]
+  B -- Yes --> C{CORS configured?}
 
-  D --> E{Authorization: Bearer ...?}
-  E -- no --> E1[401 Missing bearer token]
-  E -- yes --> F[Verify JWT via JWKS (RS256)]
-  F --> G{iss/aud valid AND scopes/roles allowed?}
-  G -- no --> G1[403 Insufficient permissions]
-  G -- yes --> H[Session Manager<br/>get or create session]
-  H --> I[StreamableHTTPServerTransport.handleRequest]
-  I --> J[Tools (getOrderStatus / createServiceTicket ...)]
-  J --> K[JSON-RPC Response]
+  C -- Yes --> C1[Validate Origin]
+  C1 --> C2{Origin allowed?}
+  C2 -- No --> C3[Blocked by CORS]
+  C2 -- Yes --> D[Parse JSON]
+
+  C -- No --> D
+
+  D --> E{Has Authorization header?}
+  E -- No --> E1[401 Missing bearer token]
+  E -- Yes --> F[Verify JWT with JWKS]
+
+  F --> G{Issuer & audience valid AND scope/role allowed?}
+  G -- No --> G1[403 Insufficient permissions]
+  G -- Yes --> H[Get or create session]
+  H --> I[Streamable HTTP transport]
+  I --> J[Invoke tools]
+  J --> K[JSON-RPC response]
 ```
 
 ---
