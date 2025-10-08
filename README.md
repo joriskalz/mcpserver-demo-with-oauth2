@@ -72,7 +72,7 @@ Values are loaded via `dotenv` (see `src/server.ts`). The **Audience** must matc
 | Variable         | Required | Description                                                    | Example                                              |
 | ---------------- | -------- | -------------------------------------------------------------- | ---------------------------------------------------- |
 | `TENANT_ID`      | Yes      | Tenant GUID or name (GUID recommended).                        | `ffffffff-ffff-ffff-ffff-ffffffffffff`               |
-| `AUDIENCE`       | Yes      | Expected token `aud`: either `api://…` or the app ID (GUID).   | `api://ffffffff-ffff-ffff-ffff-ffffffffffff/mcp-sap` |
+| `AUDIENCE`       | Yes      | Expected token `aud`: the app ID (GUID).   | `ffffffff-ffff-ffff-ffff-ffffffffffff` |
 | `PORT`           | No       | HTTP port (default `3000`).                                    | `4044`                                               |
 | `ALLOWED_SCOPES` | No       | Allowed scopes (blank → defaults: `Mcp.Access access_as_mcp`). | `Mcp.Access`                                         |
 | 
