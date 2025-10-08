@@ -11,7 +11,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 const EnvSchema = z.object({
   TENANT_ID: z.string().min(1),
   AUDIENCE: z.union([z.string().uuid(), z.string().startsWith("api://"), z.string().url()]),
-  AUDIENCE_ALT: z.union([z.string().uuid(), z.string().startsWith("api://"), z.string().url()]).optional(),
   PORT: z.string().optional(),
   // NEW: allow configuring scopes/roles via env; defaults cover Copilot Studio
   ALLOWED_SCOPES: z.string().optional(), // e.g. "Mcp.Access access_as_mcp"
@@ -43,8 +42,8 @@ function getKey(header: any, cb: any) {
   });
 }
 
-// Accept GUID and api://… audiences
-const audiences = Array.from(new Set([env.AUDIENCE, env.AUDIENCE_ALT].filter(Boolean).map(String)));
+// Accept GUID and api://… audience values
+const audience = String(env.AUDIENCE);
 
 /* ---------- Authorization (roles/scopes) ---------- */
 // Defaults cover Copilot Studio’s OAuth connection (scope "Mcp.Access")
@@ -86,13 +85,13 @@ async function verifyBearer(req: express.Request, res: express.Response, next: e
     {
       algorithms: ["RS256"],
       issuer: ISSUERS,
-      audience: audiences,
+      audience,
     } as any,
     (err, decoded: any) => {
       if (err) {
         console.error("[auth] jwt.verify failed:", err?.message, {
           expectedIssuers: ISSUERS,
-          expectedAudiences: audiences,
+          expectedAudience: audience,
         });
         return res.status(401).json({ error: "Invalid token", detail: err.message });
       }

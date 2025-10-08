@@ -9,7 +9,7 @@ Use it as a local demo backend to exercise Copilot Studio MCP tooling with OAuth
 - Built with Express, Zod validation, and the official `@modelcontextprotocol/sdk`.
 
 ## Prerequisites
-- Node.js 20 (tested with 20.x). / use nvm 20 for 
+- Node.js 20 or newer (tested with 20.x).
 - npm (ships with Node).
 - Azure Entra ID app registration with client credentials flow enabled.
 
@@ -36,7 +36,6 @@ Environment variables are loaded via `dotenv` and validated with Zod.
 |---------------|----------|---------------------------------------------------------------------------------------------|----------------------------------|
 | `TENANT_ID`   | Yes      | Azure Entra ID tenant GUID.                                                                 | `ffffffff-ffff-ffff-ffff-ffffffffffff` |
 | `AUDIENCE`    | Yes      | OAuth resource identifier (GUID, `api://...`, or URL). Must match the `aud` claim expected. | `api://mcp-demo`                 |
-| `AUDIENCE_ALT`| No       | Optional secondary audience accepted during token validation.                               | `00000000-0000-0000-0000-000000000000` |
 | `PORT`        | No       | HTTP port for Express (defaults to `3000`).                                                 | `4000`                           |
 
 ## Authentication
@@ -59,7 +58,7 @@ curl -X POST \
 ```
 
 ### Testing the MCP server
-After you obtain a token, you can use the MCP Inspector, use node 20 for it. e.g. using nvm 20.
+After you obtain a token, you can use the MCP Inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector http://localhost:3000/mcp --token "<ACCESS_TOKEN>"
