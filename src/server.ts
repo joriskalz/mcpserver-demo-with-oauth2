@@ -6,7 +6,7 @@ import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import { config } from "./config.js";
 import { verifyBearer, type AuthenticatedRequest } from "./auth.js";
-import { transport, transportReady } from "./transport.js";
+import { handleMcpRequest, shutdownSessions } from "./sessionManager.js";
 
 const app = express();
 
@@ -48,8 +48,7 @@ app.get("/health", (_req, res) => {
 
 app.post("/mcp", verifyBearer, async (req: AuthenticatedRequest, res, next) => {
   try {
-    await transportReady;
-    await transport.handleRequest(req, res, req.body);
+    await handleMcpRequest(req, res, req.body);
   } catch (error) {
     next(error);
   }
@@ -72,16 +71,20 @@ process.on("unhandledRejection", reason => {
   console.error("[process] Unhandled promise rejection", { reason });
 });
 
-const shutdown = (signal: string, exitCode: number): void => {
+const shutdown = async (signal: string, exitCode: number): Promise<void> => {
   console.log(`[process] Received ${signal}, shutting down`);
-  transport.close();
+  try {
+    await shutdownSessions();
+  } catch (error) {
+    console.error("[process] Error while shutting down sessions", error);
+  }
   httpServer.close(() => process.exit(exitCode));
 };
 
 process.on("uncaughtException", err => {
   console.error("[process] Uncaught exception", err);
-  shutdown("uncaughtException", 1);
+  void shutdown("uncaughtException", 1);
 });
 
-process.on("SIGTERM", () => shutdown("SIGTERM", 0));
-process.on("SIGINT", () => shutdown("SIGINT", 0));
+process.on("SIGTERM", () => void shutdown("SIGTERM", 0));
+process.on("SIGINT", () => void shutdown("SIGINT", 0));
