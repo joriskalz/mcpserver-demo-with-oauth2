@@ -1,7 +1,7 @@
-# MCP SAP Server
+# MCP Demo Server
 
-Model Context Protocol (MCP) server that simulates a small subset of SAP-style order and service ticket APIs.
-The service is intended for demos or local development with tools such as Copilot Studio or the MCP Inspector.
+Model Context Protocol (MCP) server that simulates simple order and service ticket APIs.
+Use it as a local demo backend to exercise Copilot Studio MCP tooling with OAuth 2.0 protection.
 
 ## Features
 - OAuth 2.0 (Azure Entra ID) protected MCP endpoint served over HTTP.
@@ -35,7 +35,7 @@ Environment variables are loaded via `dotenv` and validated with Zod.
 | Variable      | Required | Description                                                                                 | Example                          |
 |---------------|----------|---------------------------------------------------------------------------------------------|----------------------------------|
 | `TENANT_ID`   | Yes      | Azure Entra ID tenant GUID.                                                                 | `ffffffff-ffff-ffff-ffff-ffffffffffff` |
-| `AUDIENCE`    | Yes      | OAuth resource identifier (GUID, `api://...`, or URL). Must match the `aud` claim expected. | `api://mcp-sap`                  |
+| `AUDIENCE`    | Yes      | OAuth resource identifier (GUID, `api://...`, or URL). Must match the `aud` claim expected. | `api://mcp-demo`                 |
 | `AUDIENCE_ALT`| No       | Optional secondary audience accepted during token validation.                               | `00000000-0000-0000-0000-000000000000` |
 | `PORT`        | No       | HTTP port for Express (defaults to `3000`).                                                 | `4000`                           |
 
@@ -84,4 +84,3 @@ The project currently runs directly with `tsx` during development. For deploymen
 npx tsc
 node dist/server.js
 ```
-
